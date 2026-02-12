@@ -17,13 +17,11 @@ jobs:
         goarch: [amd64, arm64]
 
     steps:
-      - id: caddy_tag
+      - id: meta
         run: |
+          set -euo pipefail
           url=$(curl -fsSIL -o /dev/null -w '%{url_effective}' https://github.com/caddyserver/caddy/releases/latest)
           echo "tag=${url##*/}" >> "$GITHUB_OUTPUT"
-
-      - id: upstream
-        run: |
           echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git refs/heads/master | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git refs/heads/master | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git refs/heads/master | awk '{print $1}')" >> "$GITHUB_OUTPUT"
@@ -37,41 +35,36 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
-          CADDY_SHA: ${{ steps.upstream.outputs.caddy_sha }}
-          L4_SHA: ${{ steps.upstream.outputs.l4_sha }}
-          XCADDY_SHA: ${{ steps.upstream.outputs.xcaddy_sha }}
-          CADDY_TAG: ${{ steps.caddy_tag.outputs.tag }}
         run: |
           set -euo pipefail
 
-          env -u GOOS -u GOARCH -u CGO_ENABLED go install github.com/caddyserver/xcaddy/cmd/xcaddy@${XCADDY_SHA}
+          env -u GOOS -u GOARCH -u CGO_ENABLED go install \
+            github.com/caddyserver/xcaddy/cmd/xcaddy@${{ steps.meta.outputs.xcaddy_sha }}
           export PATH="$(go env GOPATH)/bin:${PATH}"
 
           mkdir -p build
           BIN="caddy-l4-${GOOS}-${GOARCH}"
-          xcaddy build "${CADDY_SHA}" \
-            --with github.com/mholt/caddy-l4@${L4_SHA} \
+
+          xcaddy build "${{ steps.meta.outputs.caddy_sha }}" \
+            --with github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }} \
             --output "build/${BIN}"
 
           chmod +x "build/${BIN}"
           strip "build/${BIN}" 2>/dev/null || true
-          tar -C build -czf "build/${BIN}-${CADDY_TAG}.tar.gz" "${BIN}"
+          tar -C build -czf "build/${BIN}-${{ steps.meta.outputs.tag }}.tar.gz" "${BIN}"
 
-      - name: Publish GitHub Release (overwrite assets)
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.caddy_tag.outputs.tag }}
-          name: "caddy-l4 ${{ steps.caddy_tag.outputs.tag }}"
-          draft: false
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "caddy-l4 ${{ steps.meta.outputs.tag }}"
           prerelease: false
           overwrite_files: true
-          files: |
-            build/*.tar.gz
+          files: build/*.tar.gz
           body: |
-            Tag name follows upstream latest stable tag: ${{ steps.caddy_tag.outputs.tag }}
+            Tag name follows upstream latest stable tag: ${{ steps.meta.outputs.tag }}
             Built from upstream master HEAD commits:
-            - caddy:    ${{ steps.upstream.outputs.caddy_sha }}
-            - caddy-l4: ${{ steps.upstream.outputs.l4_sha }}
-            - xcaddy:   ${{ steps.upstream.outputs.xcaddy_sha }}
+            - caddy:    ${{ steps.meta.outputs.caddy_sha }}
+            - caddy-l4: ${{ steps.meta.outputs.l4_sha }}
+            - xcaddy:   ${{ steps.meta.outputs.xcaddy_sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
