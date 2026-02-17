@@ -20,10 +20,9 @@ jobs:
       - id: meta
         run: |
           set -euo pipefail
-          url=$(curl -fsSIL -o /dev/null -w '%{url_effective}' https://github.com/caddyserver/caddy/releases/latest)
-          echo "tag=${url##*/}" >> "$GITHUB_OUTPUT"
-          echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "tag=v2.10.1" >> "$GITHUB_OUTPUT"
+          echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git refs/tags/v2.10.1 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "l4_sha=5b50eb6ed84c74cd3d4b15f854b93b8b6d71424c" >> "$GITHUB_OUTPUT"
           echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
@@ -62,8 +61,8 @@ jobs:
           overwrite_files: true
           files: build/*.tar.gz
           body: |
-            Tag name follows upstream latest stable tag: ${{ steps.meta.outputs.tag }}
-            Built from upstream default-branch HEAD commits:
+            Tag name follows upstream fixed tag: ${{ steps.meta.outputs.tag }}
+            Built from fixed commits:
             - caddy:    ${{ steps.meta.outputs.caddy_sha }}
             - caddy-l4: ${{ steps.meta.outputs.l4_sha }}
             - xcaddy:   ${{ steps.meta.outputs.xcaddy_sha }}
