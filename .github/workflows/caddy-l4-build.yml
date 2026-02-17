@@ -1,4 +1,4 @@
-name: build-caddy-l4
+name: build-caddy-l4-fixed
 
 on:
   workflow_dispatch:
@@ -20,9 +20,13 @@ jobs:
       - id: meta
         run: |
           set -euo pipefail
-          echo "tag=v2.10.1" >> "$GITHUB_OUTPUT"
-          echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git refs/tags/v2.10.1 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "l4_sha=5b50eb6ed84c74cd3d4b15f854b93b8b6d71424c" >> "$GITHUB_OUTPUT"
+          
+          TAG="v2.10.1"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          
+          L4_SHA="5b50eb6ed84c74cd3d4b15f854b93b8b6d71424c"
+          echo "l4_sha=${L4_SHA}" >> "$GITHUB_OUTPUT"
+          
           echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
@@ -45,7 +49,9 @@ jobs:
           mkdir -p build
           BIN="caddy-l4-${GOOS}-${GOARCH}"
 
-          xcaddy build "${{ steps.meta.outputs.caddy_sha }}" \
+          echo "Building Caddy ${{ steps.meta.outputs.tag }} with L4 commit ${{ steps.meta.outputs.l4_sha }}..."
+
+          xcaddy build "${{ steps.meta.outputs.tag }}" \
             --with github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }} \
             --output "build/${BIN}"
 
@@ -56,14 +62,13 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: "caddy-l4 ${{ steps.meta.outputs.tag }}"
+          name: "caddy-l4 ${{ steps.meta.outputs.tag }} (Fixed)"
           prerelease: false
           overwrite_files: true
           files: build/*.tar.gz
           body: |
-            Tag name follows upstream fixed tag: ${{ steps.meta.outputs.tag }}
-            Built from fixed commits:
-            - caddy:    ${{ steps.meta.outputs.caddy_sha }}
+            Fixed version build:
+            - caddy:    ${{ steps.meta.outputs.tag }}
             - caddy-l4: ${{ steps.meta.outputs.l4_sha }}
             - xcaddy:   ${{ steps.meta.outputs.xcaddy_sha }}
         env:
