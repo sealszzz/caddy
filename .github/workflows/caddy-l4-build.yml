@@ -22,9 +22,9 @@ jobs:
           set -euo pipefail
           url=$(curl -fsSIL -o /dev/null -w '%{url_effective}' https://github.com/caddyserver/caddy/releases/latest)
           echo "tag=${url##*/}" >> "$GITHUB_OUTPUT"
-          echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git refs/heads/master | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git refs/heads/master | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git refs/heads/master | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
         with:
@@ -62,7 +62,7 @@ jobs:
           files: build/*.tar.gz
           body: |
             Tag name follows upstream latest stable tag: ${{ steps.meta.outputs.tag }}
-            Built from upstream master HEAD commits:
+            Built from upstream default-branch HEAD commits:
             - caddy:    ${{ steps.meta.outputs.caddy_sha }}
             - caddy-l4: ${{ steps.meta.outputs.l4_sha }}
             - xcaddy:   ${{ steps.meta.outputs.xcaddy_sha }}
