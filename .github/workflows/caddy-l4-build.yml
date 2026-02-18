@@ -20,8 +20,6 @@ jobs:
       - id: meta
         run: |
           set -euo pipefail
-          tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "l4_sha=dd12cc413469831c900538fed695928874cac5b3" >> "$GITHUB_OUTPUT"
           echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
@@ -31,41 +29,54 @@ jobs:
           go-version: stable
           cache: false
 
-      - name: Build + pack
+      - name: Build
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
           set -euo pipefail
-
           env -u GOOS -u GOARCH -u CGO_ENABLED go install \
             github.com/caddyserver/xcaddy/cmd/xcaddy@${{ steps.meta.outputs.xcaddy_sha }}
           export PATH="$(go env GOPATH)/bin:${PATH}"
-
           mkdir -p build
           BIN="caddy-l4-${GOOS}-${GOARCH}"
-
           xcaddy build "${{ steps.meta.outputs.caddy_sha }}" \
             --with github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }} \
             --output "build/${BIN}"
-
           chmod +x "build/${BIN}"
           strip "build/${BIN}" 2>/dev/null || true
           tar -C build -czf "build/${BIN}-v2.10.2.tar.gz" "${BIN}"
 
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: caddy-${{ matrix.goarch }}
+          path: build/*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        run: |
+          set -euo pipefail
+          echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "l4_sha=dd12cc413469831c900538fed695928874cac5b3" >> "$GITHUB_OUTPUT"
+          echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.10.2
           name: "caddy-l4 v2.10.2"
-          prerelease: false
-          overwrite_files: true
-          files: build/*.tar.gz
+          files: dist/*.tar.gz
+          overwrite: true
           body: |
-            Tag name follows upstream latest stable tag: ${{ steps.meta.outputs.tag }}
-            Built from upstream default-branch HEAD commits:
-            - caddy:    ${{ steps.meta.outputs.caddy_sha }}
+            - caddy: ${{ steps.meta.outputs.caddy_sha }}
             - caddy-l4: ${{ steps.meta.outputs.l4_sha }}
-            - xcaddy:   ${{ steps.meta.outputs.xcaddy_sha }}
+            - xcaddy: ${{ steps.meta.outputs.xcaddy_sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
