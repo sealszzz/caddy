@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       caddy_tag: ${{ steps.meta.outputs.caddy_tag }}
+      caddy_sha: ${{ steps.meta.outputs.caddy_sha }}
       l4_sha: ${{ steps.meta.outputs.l4_sha }}
       xcaddy_sha: ${{ steps.meta.outputs.xcaddy_sha }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
@@ -36,7 +37,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           echo "caddy_tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
+          echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
@@ -86,7 +89,7 @@ jobs:
           OUT="dist/${BIN}"
 
           XCADDY_GO_BUILD_FLAGS="-trimpath -ldflags '-s -w -buildid='" \
-          xcaddy build "${{ steps.meta.outputs.caddy_tag }}" \
+          xcaddy build "${{ steps.meta.outputs.caddy_sha }}" \
             --with "github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }}" \
             --output "${OUT}"
 
@@ -146,7 +149,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build.outputs.caddy_tag }}
-          name: caddy-l4 ${{ needs.build.outputs.caddy_tag }} (${{ needs.build.outputs.short_sha }})
+          name: caddy-l4 ${{ needs.build.outputs.caddy_tag }}
           overwrite_files: true
           files: dist/*.tar.gz
           body: |
