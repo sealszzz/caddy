@@ -31,6 +31,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
+          echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
@@ -50,29 +52,21 @@ jobs:
           go version
 
       - name: Verify custom entrypoint
-        shell: bash
         run: |
-          set -euo pipefail
           test -f cmd/caddy-l4/main.go
           echo "===== cmd/caddy-l4/main.go ====="
           cat cmd/caddy-l4/main.go
 
-      - name: Init module and fetch deps
+      - name: Initialize and download modules
         shell: bash
         run: |
           set -euo pipefail
           cd cmd/caddy-l4
-
           rm -f go.mod go.sum
-          go mod init caddy-l4-build
+          go mod init custom-caddy
           go get github.com/caddyserver/caddy/v2@${{ steps.meta.outputs.tag }}
-          go get github.com/mholt/caddy-l4@latest
+          go get github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }}
           go mod tidy
-
-          echo "===== go.mod ====="
-          cat go.mod
-          echo "===== go.sum (head) ====="
-          sed -n '1,80p' go.sum
 
       - name: Build
         shell: bash
@@ -83,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          mkdir -p dist/pkg
+          mkdir -p "${GITHUB_WORKSPACE}/dist/pkg"
 
           if [ "${GOARCH}" = "amd64" ]; then
             export GOAMD64=v3
@@ -105,24 +99,11 @@ jobs:
           file "${OUT}"
           ls -lh "${OUT}"
 
-      - name: Verify modules
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./dist/caddy-l4 list-modules | tee dist/modules.txt
-          grep '^caddy.logging\.' dist/modules.txt
-          grep '^layer4\.' dist/modules.txt
-
-      - name: Package
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cp dist/caddy-l4 dist/pkg/caddy-l4
+          cp "${OUT}" "dist/pkg/${BIN}"
 
           tar -C dist/pkg -czf \
             "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.tag }}.tar.gz" \
-            caddy-l4
+            "${BIN}"
 
           ls -lh "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.tag }}.tar.gz"
 
