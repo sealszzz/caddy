@@ -9,8 +9,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     outputs:
       caddy_tag: ${{ steps.meta.outputs.caddy_tag }}
       caddy_sha: ${{ steps.meta.outputs.caddy_sha }}
