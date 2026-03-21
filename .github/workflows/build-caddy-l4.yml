@@ -4,16 +4,17 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       caddy_tag: ${{ steps.meta.outputs.caddy_tag }}
       caddy_sha: ${{ steps.meta.outputs.caddy_sha }}
       l4_sha: ${{ steps.meta.outputs.l4_sha }}
-      xcaddy_sha: ${{ steps.meta.outputs.xcaddy_sha }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
       build_time: ${{ steps.meta.outputs.build_time }}
     strategy:
@@ -41,7 +42,6 @@ jobs:
           echo "caddy_tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
           echo "caddy_sha=$(git ls-remote https://github.com/caddyserver/caddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
@@ -60,19 +60,32 @@ jobs:
             file \
             tar
 
-      - name: Install xcaddy
-        shell: bash
-        run: |
-          set -euo pipefail
-          GOBIN="${HOME}/go/bin" go install github.com/caddyserver/xcaddy/cmd/xcaddy@${{ steps.meta.outputs.xcaddy_sha }}
-          echo "${HOME}/go/bin" >> "$GITHUB_PATH"
-
-      - name: Show tool versions
+      - name: Show Go version
         shell: bash
         run: |
           set -euo pipefail
           go version
-          xcaddy version || true
+
+      - name: Verify custom entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f cmd/caddy-l4/main.go
+          echo "===== cmd/caddy-l4/main.go ====="
+          cat cmd/caddy-l4/main.go
+
+      - name: Initialize module and fetch deps
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd cmd/caddy-l4
+          rm -f go.mod go.sum
+
+          go mod init caddy-l4-build
+          go get github.com/caddyserver/caddy/v2@${{ steps.meta.outputs.caddy_sha }}
+          go get github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }}
+          go mod tidy
 
       - name: Build
         shell: bash
@@ -83,20 +96,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          mkdir -p dist/pkg
+          mkdir -p "${GITHUB_WORKSPACE}/dist/pkg"
 
           if [ "${GOARCH}" = "amd64" ]; then
             export GOAMD64=v3
           fi
 
           BIN="caddy-l4"
-          OUT="dist/${BIN}"
+          OUT="${GITHUB_WORKSPACE}/dist/${BIN}"
 
-          XCADDY_GO_BUILD_FLAGS="-trimpath -ldflags '-s -w -buildid='" \
-          xcaddy build "${{ steps.meta.outputs.caddy_sha }}" \
-            --with "github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }}" \
-            --output "${OUT}"
+          cd cmd/caddy-l4
+          go build \
+            -trimpath \
+            -ldflags="-s -w -buildid=" \
+            -o "${OUT}" \
+            .
 
+          cd "${GITHUB_WORKSPACE}"
           chmod +x "${OUT}"
 
           file "${OUT}"
@@ -142,6 +158,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -158,10 +176,10 @@ jobs:
           files: dist/*.tar.gz
           body: |
             Caddy: ${{ needs.build.outputs.caddy_tag }}
-            caddy: ${{ needs.build.outputs.caddy_sha }}
-            caddy-l4: ${{ needs.build.outputs.l4_sha }}
-            xcaddy: ${{ needs.build.outputs.xcaddy_sha }}
+            caddy HEAD: ${{ needs.build.outputs.caddy_sha }}
+            caddy-l4 HEAD: ${{ needs.build.outputs.l4_sha }}
             repo short sha: ${{ needs.build.outputs.short_sha }}
             build time: ${{ needs.build.outputs.build_time }}
+            build mode: custom cmd/caddy-l4/main.go
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
