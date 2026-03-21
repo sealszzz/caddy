@@ -108,16 +108,16 @@ jobs:
         run: |
           set -euo pipefail
           ./dist/caddy-l4 version
-          ./dist/caddy-l4 list-modules | tee dist/modules.txt
-          grep '^layer4\.' dist/modules.txt
+          ./dist/caddy-l4 list-modules | tee dist/modules-linux-amd64.txt
+          grep '^layer4\.' dist/modules-linux-amd64.txt
 
       - name: Verify binary format (arm64 only)
         if: matrix.target.goarch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          file ./dist/caddy-l4 | tee dist/file.txt
-          grep -E 'aarch64|ARM aarch64' dist/file.txt
+          file ./dist/caddy-l4 | tee dist/file-linux-arm64.txt
+          grep -E 'aarch64|ARM aarch64' dist/file-linux-arm64.txt
 
       - name: Package
         shell: bash
