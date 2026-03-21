@@ -31,7 +31,6 @@ jobs:
         run: |
           set -euo pipefail
           echo "tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
@@ -51,14 +50,21 @@ jobs:
           go version
 
       - name: Verify custom entrypoint
+        shell: bash
         run: |
+          set -euo pipefail
           test -f cmd/caddy-l4/main.go
           echo "===== cmd/caddy-l4/main.go ====="
-          sed -n '1,120p' cmd/caddy-l4/main.go
+          cat cmd/caddy-l4/main.go
 
-      - name: Download modules
+      - name: Add caddy-l4 dependency
+        shell: bash
         run: |
-          go mod download
+          set -euo pipefail
+          go get github.com/mholt/caddy-l4@latest
+          go mod tidy
+          echo "===== go.mod ====="
+          sed -n '1,260p' go.mod
 
       - name: Build
         shell: bash
@@ -89,11 +95,24 @@ jobs:
           file "${OUT}"
           ls -lh "${OUT}"
 
-          cp "${OUT}" "dist/pkg/${BIN}"
+      - name: Verify modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./dist/caddy-l4 list-modules | tee dist/modules.txt
+          grep '^caddy.logging\.' dist/modules.txt
+          grep '^layer4\.' dist/modules.txt
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cp dist/caddy-l4 dist/pkg/caddy-l4
 
           tar -C dist/pkg -czf \
             "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.tag }}.tar.gz" \
-            "${BIN}"
+            caddy-l4
 
           ls -lh "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.tag }}.tar.gz"
 
