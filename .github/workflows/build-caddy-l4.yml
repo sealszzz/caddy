@@ -30,8 +30,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
+          echo "caddy_tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
           echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
@@ -46,28 +47,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends file tar
 
-      - name: Show Go version
+      - name: Install xcaddy
+        shell: bash
         run: |
+          set -euo pipefail
+          GOBIN="${HOME}/go/bin" go install github.com/caddyserver/xcaddy/cmd/xcaddy@${{ steps.meta.outputs.xcaddy_sha }}
+          echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
           go version
-
-      - name: Verify custom entrypoint
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f cmd/caddy-l4/main.go
-          echo "===== cmd/caddy-l4/main.go ====="
-          cat cmd/caddy-l4/main.go
-
-      - name: Initialize module and fetch deps
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd cmd/caddy-l4
-          rm -f go.mod go.sum
-          go mod init caddy-l4-build
-          go get github.com/caddyserver/caddy/v2@${{ steps.meta.outputs.tag }}
-          go get github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }}
-          go mod tidy
+          xcaddy version || true
 
       - name: Build
         shell: bash
@@ -78,23 +70,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          mkdir -p "${GITHUB_WORKSPACE}/dist/pkg"
+          mkdir -p dist/pkg
 
           if [ "${GOARCH}" = "amd64" ]; then
             export GOAMD64=v3
           fi
 
           BIN="caddy-l4"
-          OUT="${GITHUB_WORKSPACE}/dist/${BIN}"
+          OUT="dist/${BIN}"
 
-          cd cmd/caddy-l4
-          go build \
-            -trimpath \
-            -ldflags="-s -w -buildid= -X 'main.buildVersion=${{ steps.meta.outputs.tag }}' -X 'main.buildCommit=${{ steps.meta.outputs.short_sha }}' -X 'main.buildTime=${{ steps.meta.outputs.build_time }}'" \
-            -o "${OUT}" \
-            .
+          XCADDY_GO_BUILD_FLAGS="-trimpath -ldflags '-s -w -buildid='" \
+          xcaddy build "${{ steps.meta.outputs.caddy_tag }}" \
+            --with "github.com/mholt/caddy-l4@${{ steps.meta.outputs.l4_sha }}" \
+            --output "${OUT}"
 
-          cd "${GITHUB_WORKSPACE}"
           chmod +x "${OUT}"
 
           file "${OUT}"
@@ -106,6 +95,8 @@ jobs:
         run: |
           set -euo pipefail
           ./dist/caddy-l4 version
+          ./dist/caddy-l4 list-modules | tee dist/modules.txt
+          grep '^layer4\.' dist/modules.txt
 
       - name: Verify binary format (arm64 only)
         if: matrix.target.goarch == 'arm64'
@@ -123,16 +114,16 @@ jobs:
           cp dist/caddy-l4 dist/pkg/caddy-l4
 
           tar -C dist/pkg -czf \
-            "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.tag }}.tar.gz" \
+            "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.caddy_tag }}-${{ steps.meta.outputs.short_sha }}.tar.gz" \
             caddy-l4
 
-          ls -lh "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.tag }}.tar.gz"
+          ls -lh "dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.caddy_tag }}-${{ steps.meta.outputs.short_sha }}.tar.gz"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: caddy-l4-${{ matrix.target.name }}
-          path: dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.tag }}.tar.gz
+          name: caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.short_sha }}
+          path: dist/caddy-l4-${{ matrix.target.name }}-${{ steps.meta.outputs.caddy_tag }}-${{ steps.meta.outputs.short_sha }}.tar.gz
           retention-days: 7
 
   release:
@@ -144,7 +135,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
+          echo "caddy_tag=$(git ls-remote --tags --refs --sort='v:refname' https://github.com/caddyserver/caddy.git | tail -n1 | awk -F/ '{print $3}')" >> "$GITHUB_OUTPUT"
+          echo "l4_sha=$(git ls-remote https://github.com/mholt/caddy-l4.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "xcaddy_sha=$(git ls-remote https://github.com/caddyserver/xcaddy.git HEAD | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -155,9 +150,15 @@ jobs:
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: caddy-l4 ${{ steps.meta.outputs.tag }}
+          tag_name: ${{ steps.meta.outputs.caddy_tag }}
+          name: caddy-l4 ${{ steps.meta.outputs.caddy_tag }} (${{ steps.meta.outputs.short_sha }})
           overwrite_files: true
           files: dist/*.tar.gz
+          body: |
+            Caddy: ${{ steps.meta.outputs.caddy_tag }}
+            caddy-l4: ${{ steps.meta.outputs.l4_sha }}
+            xcaddy: ${{ steps.meta.outputs.xcaddy_sha }}
+            repo short sha: ${{ steps.meta.outputs.short_sha }}
+            build time: ${{ steps.meta.outputs.build_time }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
