@@ -23,8 +23,10 @@ jobs:
         target:
           - name: linux-amd64
             goarch: amd64
+            strip_bin: strip
           - name: linux-arm64
             goarch: arm64
+            strip_bin: aarch64-linux-gnu-strip
 
     steps:
       - name: Checkout
@@ -52,9 +54,15 @@ jobs:
           cache: false
 
       - name: Install packages
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends file tar binutils
+          sudo apt-get install -y --no-install-recommends \
+            file \
+            tar \
+            binutils \
+            binutils-aarch64-linux-gnu
 
       - name: Install xcaddy
         shell: bash
@@ -69,7 +77,7 @@ jobs:
           set -euo pipefail
           go version
           xcaddy version || true
-          strip --version | head -n1 || true
+          "${{ matrix.target.strip_bin }}" --version | head -n1 || true
 
       - name: Build
         shell: bash
@@ -77,6 +85,7 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: 0
+          STRIP_BIN: ${{ matrix.target.strip_bin }}
         run: |
           set -euo pipefail
 
@@ -95,7 +104,7 @@ jobs:
             --output "${OUT}"
 
           chmod +x "${OUT}"
-          strip "${OUT}"
+          "${STRIP_BIN}" "${OUT}"
 
           file "${OUT}"
           ls -lh "${OUT}"
