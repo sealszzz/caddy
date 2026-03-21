@@ -38,7 +38,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: stable
-          cache: true
+          cache: false
 
       - name: Install packages
         run: |
@@ -57,14 +57,22 @@ jobs:
           echo "===== cmd/caddy-l4/main.go ====="
           cat cmd/caddy-l4/main.go
 
-      - name: Add caddy-l4 dependency
+      - name: Init module and fetch deps
         shell: bash
         run: |
           set -euo pipefail
+          cd cmd/caddy-l4
+
+          rm -f go.mod go.sum
+          go mod init caddy-l4-build
+          go get github.com/caddyserver/caddy/v2@${{ steps.meta.outputs.tag }}
           go get github.com/mholt/caddy-l4@latest
           go mod tidy
+
           echo "===== go.mod ====="
-          sed -n '1,260p' go.mod
+          cat go.mod
+          echo "===== go.sum (head) ====="
+          sed -n '1,80p' go.sum
 
       - name: Build
         shell: bash
@@ -82,14 +90,16 @@ jobs:
           fi
 
           BIN="caddy-l4"
-          OUT="dist/${BIN}"
+          OUT="${GITHUB_WORKSPACE}/dist/${BIN}"
 
+          cd cmd/caddy-l4
           go build \
             -trimpath \
             -ldflags="-s -w -buildid=" \
             -o "${OUT}" \
-            ./cmd/caddy-l4
+            .
 
+          cd "${GITHUB_WORKSPACE}"
           chmod +x "${OUT}"
 
           file "${OUT}"
