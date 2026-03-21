@@ -154,6 +154,7 @@ jobs:
           files: dist/*.tar.gz
           body: |
             Caddy: ${{ needs.build.outputs.caddy_tag }}
+            caddy: ${{ needs.build.outputs.caddy_sha }}
             caddy-l4: ${{ needs.build.outputs.l4_sha }}
             xcaddy: ${{ needs.build.outputs.xcaddy_sha }}
             repo short sha: ${{ needs.build.outputs.short_sha }}
