@@ -54,7 +54,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends file tar
+          sudo apt-get install -y --no-install-recommends file tar binutils
 
       - name: Install xcaddy
         shell: bash
@@ -69,6 +69,7 @@ jobs:
           set -euo pipefail
           go version
           xcaddy version || true
+          strip --version | head -n1 || true
 
       - name: Build
         shell: bash
@@ -94,6 +95,7 @@ jobs:
             --output "${OUT}"
 
           chmod +x "${OUT}"
+          strip "${OUT}"
 
           file "${OUT}"
           ls -lh "${OUT}"
